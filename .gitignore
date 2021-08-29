@@ -1,0 +1,6 @@
+#os files
+.DS_Store
+
+#services
+Account/
+WebStore/
