@@ -1,0 +1,93 @@
+version: "3.8"
+services:
+  account:
+      build:
+        context: ./Account
+        dockerfile: Dockerfile
+      restart: on-failure
+      networks:
+        - fakegram
+      ports:
+        - 8080:8080
+      environment:
+        KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
+        JWT_SECRET: ${JWT_SECRET:-secret}
+        CASSANDRA_POINT: ${CASSANDRA_POINT:-cassandra:9042}
+      depends_on: 
+        [kafka, cassandra]
+  cassandra:
+      image: djokicm/fakegram-cassandra:0.0.1
+      restart: on-failure
+      networks:
+        - fakegram
+      ports:
+        - 9042:9042
+      healthcheck:
+        test: ["CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e describe keyspaces"]
+        interval: 15s
+        timeout: 10s
+        retries: 10
+  cassandra-load-keyspaces:
+      image: djokicm/fakegram-cassandra:0.0.1
+      networks: 
+        - fakegram
+      depends_on:
+        cassandra:
+          condition: service_healthy
+      volumes:
+        - ./cassandra.cql:/schema.cql
+      command: /bin/bash -c "echo loading cassandra keyspace && cqlsh cassandra -f /schema.cql"
+
+  zookeeper:
+      image: confluentinc/cp-zookeeper:6.2.0
+      networks:
+        - fakegram
+      ports:
+        - 2181:2181
+      environment:
+        ZOOKEEPER_CLIENT_PORT: 2181
+  kafka:
+      image: confluentinc/cp-kafka:6.2.0
+      networks:
+        - fakegram
+      ports: 
+        - 9092:9092
+        - 9094:9094
+        - 9200:9200
+      environment:
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+        KAFKA_LISTENERS: PLAINTEXT://kafka:9094,OUTSIDE://kafka:9092
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9094,OUTSIDE://kafka:9092
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,OUTSIDE:PLAINTEXT
+        KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      depends_on: 
+        - zookeeper
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prometheus:/etc/prometheus
+  grafana:
+    image: grafana/grafana:7.5.2
+    container_name: grafana
+    restart: on-failure
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=password
+    networks:
+      - fakegram
+    ports:
+      - 3010:3000
+    volumes: []
+#    - grafana:/var/lib/grafana
+    depends_on:
+      - prometheus
+networks:
+    fakegram:
+      name: fakegram
+      driver: bridge
