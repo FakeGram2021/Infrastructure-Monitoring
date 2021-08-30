@@ -12,6 +12,7 @@
       }
     ]
   },
+  "description": "",
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
@@ -346,7 +347,12 @@
   ],
   "schemaVersion": 27,
   "style": "dark",
-  "tags": [],
+  "tags": [
+    "Services",
+    "http",
+    "traffic",
+    "request_count"
+  ],
   "templating": {
     "list": []
   },
@@ -358,5 +364,5 @@
   "timezone": "",
   "title": "Fakegram Http metrics",
   "uid": "GP2IOc47z",
-  "version": 3
+  "version": 2
 }
