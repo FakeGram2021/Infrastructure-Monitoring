@@ -20,6 +20,8 @@ CREATE TABLE account_info_by_account_id (
   web_url TEXT,
   biography TEXT,
   privacy TEXT,
+  is_agent TEXT,
+  is_admin TEXT,
   PRIMARY KEY(account_id)
 );
 
@@ -38,3 +40,19 @@ CREATE TABLE relation_by_object (
 );
 
 CREATE CUSTOM INDEX account_username_index ON account_info_by_account_id (username) USING 'org.apache.cassandra.index.sasi.SASIIndex';
+
+CREATE KEYSPACE IF NOT EXISTS admin
+  WITH REPLICATION = {
+    'class' : 'SimpleStrategy',
+    'replication_factor': 1
+};
+
+USE admin;
+
+CREATE TABLE report (
+    report_reason TEXT,
+    reported_user_id TEXT,
+    reported_post_id TEXT,
+    reporter_id TEXT,
+    PRIMARY KEY(report_reason, reported_user_id, reported_post_id, reporter_id)
+);

@@ -3,5 +3,7 @@
 
 #services
 Account/
-WebStore/
+PostService/
+AgentService/
 Admin/
+frontend/

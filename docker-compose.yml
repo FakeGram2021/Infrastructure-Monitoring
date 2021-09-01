@@ -1,71 +1,123 @@
 version: "3.8"
 services:
   account:
-      build:
-        context: ./Account
-        dockerfile: Dockerfile
-      restart: on-failure
-      networks:
-        - fakegram
-      ports:
-        - 8080:8080
-      environment:
-        KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
-        JWT_SECRET: ${JWT_SECRET:-secret}
-        CASSANDRA_POINT: ${CASSANDRA_POINT:-cassandra:9042}
-      depends_on: 
-        [kafka, cassandra]
+    build:
+      context: ./Account
+      dockerfile: Dockerfile
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 8080:8080
+    environment:
+      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
+      JWT_SECRET: ${JWT_SECRET:-secret}
+      CASSANDRA_POINT: ${CASSANDRA_POINT:-cassandra:9042}
+    depends_on: [kafka, cassandra]
+
+  post-service:
+    build:
+      context: ./PostService
+      dockerfile: Dockerfile
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 8081:8080
+    environment:
+      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
+      JWT_SECRET: ${JWT_SECRET:-secret}
+      ELASTIC_SERVER: ${ELASTIC_SERVER:-elastic:9200}
+    depends_on: [kafka, elastic]
+
+  agent-service:
+    build:
+      context: ./AgentService
+      dockerfile: Dockerfile
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 8082:8080
+    environment:
+      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
+      JWT_SECRET: ${JWT_SECRET:-secret}
+      ELASTIC_SERVER: ${ELASTIC_SERVER:-elastic:9200}
+    depends_on: [kafka, elastic]
+
+  admin-service:
+    build:
+      context: ./AdminService
+      dockerfile: Dockerfile
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 8083:8080
+    environment:
+      KAFKA_SERVER: ${KAFKA_SERVER:-kafka:9092}
+      JWT_SECRET: ${JWT_SECRET:-secret}
+      CASSANDRA_POINT: ${CASSANDRA_POINT:-cassandra:9042}
+    depends_on: [kafka, cassandra]
 
   cassandra:
-      image: djokicm/fakegram-cassandra:0.0.1
-      restart: on-failure
-      networks:
-        - fakegram
-      ports:
-        - 9042:9042
-      healthcheck:
-        test: ["CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e describe keyspaces"]
-        interval: 15s
-        timeout: 10s
-        retries: 10
+    image: djokicm/fakegram-cassandra:0.0.1
+    restart: on-failure
+    networks:
+      - fakegram
+    ports:
+      - 9042:9042
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "cqlsh",
+          "-u cassandra",
+          "-p cassandra",
+          "-e describe keyspaces",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
 
   cassandra-load-keyspaces:
-      image: djokicm/fakegram-cassandra:0.0.1
-      networks: 
-        - fakegram
-      depends_on:
-        cassandra:
-          condition: service_healthy
-      volumes:
-        - ./cassandra.cql:/schema.cql
-      command: /bin/bash -c "echo loading cassandra keyspace && cqlsh cassandra -f /schema.cql"
+    image: djokicm/fakegram-cassandra:0.0.1
+    networks:
+      - fakegram
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./cassandra.cql:/schema.cql
+    command: /bin/bash -c "echo loading cassandra keyspace && cqlsh cassandra -f /schema.cql"
 
   zookeeper:
-      image: confluentinc/cp-zookeeper:6.2.0
-      networks:
-        - fakegram
-      ports:
-        - 2181:2181
-      environment:
-        ZOOKEEPER_CLIENT_PORT: 2181
+    image: wurstmeister/zookeeper
+    networks:
+      - fakegram
+    ports:
+      - "2181:2181"
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
 
   kafka:
-      image: confluentinc/cp-kafka:6.2.0
-      networks:
-        - fakegram
-      ports: 
-        - 9092:9092
-        - 9094:9094
-        - 9200:9200
-      environment:
-        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-        KAFKA_LISTENERS: PLAINTEXT://kafka:9094,OUTSIDE://kafka:9092
-        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9094,OUTSIDE://kafka:9092
-        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,OUTSIDE:PLAINTEXT
-        KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      depends_on: 
-        - zookeeper
+    image: wurstmeister/kafka:2.13-2.6.0
+    networks:
+      - fakegram
+    ports:
+      - 9092:9092
+      - 9094:9094
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_HOST_NAME: PLAINTEXT://localhost:9092
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    depends_on:
+      - zookeeper
 
   prometheus:
     image: prom/prometheus
@@ -114,12 +166,34 @@ services:
       - /var/run:/var/run:rw
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-      - /cgroup:/cgroup:ro 
+      - /cgroup:/cgroup:ro
+
+  elastic:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.2
+    container_name: elastic
+    environment:
+      - node.name=elastic
+      - cluster.name=es-docker-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9300:9300
+    networks:
+      - fakegram
 
 networks:
-    fakegram:
-      name: fakegram
-      driver: bridge
+  fakegram:
+    name: fakegram
+    driver: bridge
 
 volumes:
   grafana-storage:
+  es-data:
